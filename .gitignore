@@ -1,0 +1,97 @@
+# -----------------------------
+# Environment variables / secrets
+# -----------------------------
+.env
+.env.*
+!.env.example
+
+
+# -----------------------------
+# Node / frontend
+# -----------------------------
+node_modules/
+**/node_modules/
+
+frontend/public/
+
+dist/
+**/dist/
+
+build/
+**/build/
+
+
+# -----------------------------
+# Python
+# -----------------------------
+__pycache__/
+**/__pycache__/
+
+*.py[cod]
+*$py.class
+
+.venv/
+**/.venv/
+
+venv/
+**/venv/
+
+
+# -----------------------------
+# Backend uploads
+# -----------------------------
+backend/uploads/
+backend/uploads/**
+
+
+# -----------------------------
+# Test / cache files
+# -----------------------------
+.pytest_cache/
+**/.pytest_cache/
+
+.mypy_cache/
+**/.mypy_cache/
+
+.ruff_cache/
+**/.ruff_cache/
+
+.coverage
+htmlcov/
+
+
+# -----------------------------
+# IDE / editor
+# -----------------------------
+.vscode/
+.idea/
+
+*.swp
+*.swo
+
+
+# -----------------------------
+# OS files
+# -----------------------------
+.DS_Store
+Thumbs.db
+
+
+# -----------------------------
+# Logs
+# -----------------------------
+*.log
+logs/
+**/logs/
+
+
+# -----------------------------
+# Misc temporary files
+# -----------------------------
+*.tmp
+*.temp
+
+# -----------------------------
+# Ignore all db creation/script
+# -----------------------------
+/db/
