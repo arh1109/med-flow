@@ -12,8 +12,25 @@ from app.schemas.work_order import (
     WorkOrderUpdate,
     ReliabilityMetric,
 )
+from typing import Annotated
+from sqlalchemy import asc, desc, or_
+from app.models import DiagnosticLog
+from app.schemas.pagination import (
+    Page,
+    PaginationParams,
+    get_pagination_params,
+)
 
 router = APIRouter(prefix="/work_orders", tags=["work_orders"])
+
+WORK_ORDER_SORT_COLUMNS = {
+    "id": WorkOrder.id,
+    "title": WorkOrder.title,
+    "priority": WorkOrder.priority,
+    "status": WorkOrder.status,
+    "equipment_id": WorkOrder.equipment_id,
+    "technician_id": WorkOrder.technician_id,
+}
 
 
 @router.get("/discrepancies", response_model=list[DiscrepancyRead])
@@ -24,7 +41,7 @@ async def list_colocation_discrepancies(
     ),
     db: AsyncSession = Depends(get_db),
     ##Day 5 code here
-    _: User = Depends(require_role(UserRole.CLINICAL_ADMIN, UserRole.FIELD_TECHNICIAN)),
+    _: User = Depends(require_role(UserRole.CLINICAL_ADMIN, UserRole.AUDITOR)),
 ):
     """
     Business Question #2: Co-Location Discrepancy - a fourth time.
@@ -118,7 +135,7 @@ async def update_work_order_status(
 @router.get("/reliability", response_model=list[ReliabilityMetric])
 async def reliability_metrics(
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_role(UserRole.CLINICAL_ADMIN, UserRole.AUDITOR)),
 ):
     """
     Business Question #3: Reliability Metrics.
@@ -140,16 +157,70 @@ async def reliability_metrics(
     result = await db.execute(statement)
     return [dict(row) for row in result.mappings().all()]
 
+def _work_order_sort_expression(
+    pagination: PaginationParams,
+):
+    column = WORK_ORDER_SORT_COLUMNS.get(
+        pagination.sort_by
+    )
+
+    if column is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "Invalid sort_by. Allowed values: "
+                + ", ".join(
+                    WORK_ORDER_SORT_COLUMNS.keys()
+                )
+            ),
+        )
+
+    return (
+        desc(column)
+        if pagination.sort_dir == "desc"
+        else asc(column)
+    )
+
+
 @router.get(
     "",
-    response_model=list[WorkOrderRead],
+    response_model=Page[WorkOrderRead],
 )
 async def list_work_orders(
+    pagination: Annotated[
+        PaginationParams,
+        Depends(get_pagination_params),
+    ],
+    work_order_status: WorkOrderStatus | None = Query(
+        default=None,
+        alias="status",
+    ),
+    hospital_id: int | None = Query(
+        default=None,
+        ge=1,
+    ),
+    search: str | None = Query(
+        default=None,
+        min_length=1,
+        max_length=100,
+        description=(
+            "Case-insensitive search across work-order title, "
+            "equipment model, and equipment serial number."
+        ),
+    ),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-) -> list[WorkOrder]:
+    current_user: User = Depends(
+        get_current_user
+    ),
+) -> Page[WorkOrderRead]:
 
-    statement = select(WorkOrder)
+    order_by = (
+        _work_order_sort_expression(
+            pagination
+        )
+    )
+
+    conditions = []
 
     if (
         current_user.role
@@ -159,23 +230,142 @@ async def list_work_orders(
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=(
-                    "Field Technician account is not "
-                    "linked to a technician"
+                    "Field Technician account is "
+                    "not linked to a technician"
                 ),
             )
 
-        statement = statement.where(
+        # This role scope is part of BOTH the count and page query.
+        conditions.append(
             WorkOrder.technician_id
             == current_user.technician_id
         )
 
-    statement = statement.order_by(
-        WorkOrder.id
+    if work_order_status is not None:
+        conditions.append(
+            WorkOrder.status
+            == work_order_status
+        )
+
+    if hospital_id is not None:
+        conditions.append(
+            Equipment.hospital_id
+            == hospital_id
+        )
+
+    if search:
+        pattern = f"%{search.strip()}%"
+
+        conditions.append(
+            or_(
+                WorkOrder.title.ilike(pattern),
+                Equipment.model.ilike(pattern),
+                Equipment.serial_number.ilike(
+                    pattern
+                ),
+            )
+        )
+
+    # Query 1: accurate count after all role/filter predicates.
+    count_statement = (
+        select(
+            func.count(WorkOrder.id)
+        )
+        .join(
+            Equipment,
+            Equipment.id
+            == WorkOrder.equipment_id,
+        )
+        .where(*conditions)
     )
 
-    result = await db.execute(statement)
+    total = (
+        await db.execute(count_statement)
+    ).scalar_one()
 
-    return list(result.scalars().all())
+    offset = (
+        pagination.page - 1
+    ) * pagination.size
+
+    # Correlated scalar subqueries add the newest diagnostic report
+    # without loading /diagnostic_logs separately.
+    latest_diagnostic_id = (
+        select(DiagnosticLog.id)
+        .where(
+            DiagnosticLog.work_order_id
+            == WorkOrder.id
+        )
+        .order_by(
+            DiagnosticLog.created_at.desc(),
+            DiagnosticLog.id.desc(),
+        )
+        .limit(1)
+        .correlate(WorkOrder)
+        .scalar_subquery()
+    )
+
+    latest_diagnostic_file_url = (
+        select(DiagnosticLog.file_url)
+        .where(
+            DiagnosticLog.work_order_id
+            == WorkOrder.id
+        )
+        .order_by(
+            DiagnosticLog.created_at.desc(),
+            DiagnosticLog.id.desc(),
+        )
+        .limit(1)
+        .correlate(WorkOrder)
+        .scalar_subquery()
+    )
+
+    # Query 2: one page only, sorted in SQL.
+    rows_statement = (
+        select(
+            WorkOrder.id,
+            WorkOrder.title,
+            WorkOrder.priority,
+            WorkOrder.status,
+            WorkOrder.equipment_id,
+            WorkOrder.technician_id,
+            latest_diagnostic_id.label(
+                "diagnostic_log_id"
+            ),
+            latest_diagnostic_file_url.label(
+                "diagnostic_file_url"
+            ),
+        )
+        .join(
+            Equipment,
+            Equipment.id
+            == WorkOrder.equipment_id,
+        )
+        .where(*conditions)
+        .order_by(
+            order_by,
+            WorkOrder.id.asc(),
+        )
+        .offset(offset)
+        .limit(pagination.size)
+    )
+
+    result = await db.execute(
+        rows_statement
+    )
+
+    items = [
+        WorkOrderRead(
+            **dict(row)
+        )
+        for row in result.mappings().all()
+    ]
+
+    return Page[WorkOrderRead](
+        items=items,
+        total=total,
+        page=pagination.page,
+        size=pagination.size,
+    )
 
 @router.post(
     "",

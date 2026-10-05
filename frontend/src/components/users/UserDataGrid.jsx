@@ -355,7 +355,7 @@ function handleClearFilter() {
                             }
                         >
                             <MenuItem value="Clinical Admin">
-                                Operations Admin
+                                Clinical Admin
                             </MenuItem>
 
                             <MenuItem value="Field Technician">

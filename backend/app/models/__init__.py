@@ -6,6 +6,7 @@ from .diagnostic_log import DiagnosticLog
 from .technician import Technician
 from .base import Base
 from .user import User
+from .refresh_token import RefreshToken
 
 __all__ = [
     'EquipmentStatus', 'WorkOrderStatus', 'WorkOrderPriority', 'UserRole', 'Equipment', 'Hospital', 'WorkOrder', 'DiagnosticLog', 'Technician', 'Base', 'User'

@@ -11,6 +11,7 @@ from .base import Base
 from .enums import UserRole
 
 if TYPE_CHECKING:
+    from .refresh_token import RefreshToken
     from .technician import Technician
 
 
@@ -53,6 +54,12 @@ class User(Base):
 
     technician: Mapped["Technician | None"] = relationship(
         back_populates="user"
+    )
+
+    refresh_tokens: Mapped[list["RefreshToken"]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
     )
 
     def __repr__(self) -> str:

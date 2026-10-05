@@ -7,7 +7,7 @@ import apiClient from '../../api/client.js';
 
 //map data to the DataGrid from the backend
 const columns = [
-    {field: 'work_order_id', headerName: 'Service Call ID', width: 110},
+    {field: 'work_order_id', headerName: 'Work Order ID', width: 110},
     {field: 'title', headerName: 'Title', width: 220},
     {field: 'equipment_hospital_id', headerName: 'Equipment Hospital', width: 140, type: 'number'},
     {field: 'technician_hospital_id', headerName: 'Technician Hospital', width: 150, type: 'number'},

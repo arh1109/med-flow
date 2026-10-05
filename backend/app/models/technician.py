@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 from typing import TYPE_CHECKING
 
 from sqlalchemy import ForeignKey, Integer, String
@@ -14,17 +15,37 @@ if TYPE_CHECKING:
 
 class Technician(Base):
     __tablename__ = "technicians"
-    id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[int] = mapped_column(String(100))
 
-    hospital_id: Mapped[int] = mapped_column(Integer, ForeignKey("hospitals.id"))
+    id: Mapped[int] = mapped_column(
+        primary_key=True
+    )
 
-    hospital: Mapped["Hospital"] = relationship(back_populates="technicians")
-    work_orders: Mapped[list["WorkOrder"]] = relationship(back_populates="technician")
+    name: Mapped[str] = mapped_column(
+        String(100)
+    )
+
+    # Nullable so deleting a hospital can preserve the technician record.
+    hospital_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("hospitals.id"),
+        nullable=True,
+    )
+
+    hospital: Mapped["Hospital | None"] = relationship(
+        back_populates="technicians"
+    )
+
+    work_orders: Mapped[list["WorkOrder"]] = relationship(
+        back_populates="technician"
+    )
+
     user: Mapped["User | None"] = relationship(
         back_populates="technician"
     )
 
     def __repr__(self) -> str:
-        return (f"Technician(id={self.id}, name={self.name!r}, "
-                f"hospital_id={self.hospital_id}")
+        return (
+            f"Technician(id={self.id}, "
+            f"name={self.name!r}, "
+            f"hospital_id={self.hospital_id})"
+        )

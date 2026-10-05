@@ -1,58 +1,76 @@
-"""
-Robopulse Command Center
-Day 5 - password hashing and JWT helper functions
-
-SECRET-KEY: it follows the same env-var-with-fallback pattern that we saw on Day 3's
-DATABASE_URL. Note, we will not be committing a real secret key here if this were
-a real project being pushed to production (NOT SECURE!!!!!)
-"""
-
-import os
 from datetime import datetime, timedelta, timezone
-from app.config import settings
+import hashlib
+import secrets
 
 import bcrypt
 import jwt
 
-# Security Constants and helper functions for password hashing and JWT token management
-SECRET_KEY = settings.secret_key
-#os.environ.get("SECRET_KEY", "<replace-with-a-real-secret-key>")
+from app.config import settings
 
+
+SECRET_KEY = settings.secret_key
 ALGORITHM = "HS256"
 
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
-
-
-# defines our algoirthm for signing the JWT(json-Web Tokens) tokens. There 
-# storing plain text passwords in the db. Instead, we store the hashed version of the password,
-# which is a one-way transformation that cannot be easily reversed
-
-# takes a plain text password as an input, hashes it using bcrypt, and returns the hashed pw as
-# a string.
 def hash_password(plain_password: str) -> str:
-    hashed = bcrypt.hashpw(plain_password.encode("utf-8"), bcrypt.gensalt())
+    hashed = bcrypt.hashpw(
+        plain_password.encode("utf-8"),
+        bcrypt.gensalt(),
+    )
     return hashed.decode("utf-8")
 
-# takes a hashed password and a plain text password as input, and checks if the plain text password
-# matches the hashed password
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return bcrypt.checkpw(plain_password.encode("utf-8"), hashed_password.encode("utf-8"))
 
-# This function creates a JWT access token with the provided data and an optional expiration time
-def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
-    # to_encode is a copy of the input data dictionary, which will be used to create the payload of the JWT
+def verify_password(
+    plain_password: str,
+    hashed_password: str,
+) -> bool:
+    return bcrypt.checkpw(
+        plain_password.encode("utf-8"),
+        hashed_password.encode("utf-8"),
+    )
+
+
+def create_access_token(
+    data: dict,
+    expires_delta: timedelta | None = None,
+) -> str:
     to_encode = data.copy()
 
-    # check if an expiration time provided; if not, we can use the default expiration time defined by
-    # ACCESS_TOKEN_EXPIRE_MINUTES.
     expire = datetime.now(timezone.utc) + (
-        expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        expires_delta
+        or timedelta(
+            minutes=settings.access_token_expire_minutes
+        )
     )
 
     to_encode["exp"] = expire
-    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
-# this function decodes a FWT access token and returns the payload as a dictionary
+    return jwt.encode(
+        to_encode,
+        SECRET_KEY,
+        algorithm=ALGORITHM,
+    )
+
+
 def decode_access_token(token: str) -> dict:
-    return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+    return jwt.decode(
+        token,
+        SECRET_KEY,
+        algorithms=[ALGORITHM],
+    )
+
+
+def create_refresh_token() -> str:
+    return secrets.token_urlsafe(48)
+
+
+def hash_refresh_token(token: str) -> str:
+    return hashlib.sha256(
+        token.encode("utf-8")
+    ).hexdigest()
+
+
+def get_refresh_token_expiry() -> datetime:
+    return datetime.now(timezone.utc) + timedelta(
+        days=settings.refresh_token_expire_days
+    )
